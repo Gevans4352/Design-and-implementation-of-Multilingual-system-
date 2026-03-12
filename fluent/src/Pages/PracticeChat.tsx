@@ -6,8 +6,7 @@ import {
     Mic,
     Volume2,
     Languages,
-    Check,
-    MoreVertical
+    Check
 } from "lucide-react";
 
 interface Message {
@@ -15,24 +14,56 @@ interface Message {
     text: string;
     sender: "ai" | "user";
     timestamp: string;
-    translation?: string;          // optional translated text when toggled
+    translation?: string;
+    tts_voice?: string;
 }
+
+const LANG_DEFAULT_VOICE: Record<string, string> = {
+    "ig": "Adaora",
+    "ha": "Umar",
+    "yo": "Tayo",
+    "fr": "Emma",
+    "en": "Jude",
+    "es": "Remi",
+};
 
 const PracticeChat = () => {
     const navigate = useNavigate();
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputValue, setInputValue] = useState("");
     const [isTranslating, setIsTranslating] = useState(false);
+    const [isThinking, setIsThinking] = useState(false);
+    const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
+    const [selectedLanguage, setSelectedLanguage] = useState("Igbo");
+    const [selectedTopic, setSelectedTopic] = useState("Conversation");
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const socketRef = useRef<WebSocket | null>(null);
+    const isTranslatingRef = useRef(isTranslating);
 
+    // Keep ref in sync with state
     useEffect(() => {
-        const conversationId = localStorage.getItem("currentConversationId") || "demo-session";
+        isTranslatingRef.current = isTranslating;
+    }, [isTranslating]);
 
-        // Load History
+    const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8006";
+
+    // Load History - only once on mount
+    useEffect(() => {
+        const langCode = localStorage.getItem("selectedLanguage") || "ig";
+        const langMap: { [key: string]: string } = {
+            'en': 'English',
+            'fr': 'French',
+            'yo': 'Yoruba',
+            'ig': 'Igbo',
+            'ha': 'Hausa'
+        };
+        setSelectedLanguage(langMap[langCode] || "Igbo");
+        setSelectedTopic(localStorage.getItem("selectedTopicTitle") || "Conversation");
+
+        const conversationId = localStorage.getItem("currentConversationId") || "demo-session";
         const loadHistory = async () => {
             try {
-                const response = await fetch(`http://127.0.0.1:8000/messages/${conversationId}`);
+                const response = await fetch(`${API_BASE}/messages/${conversationId}`);
                 if (response.ok) {
                     const data = await response.json();
                     const mappedMessages = data.map((m: any) => ({
@@ -40,7 +71,8 @@ const PracticeChat = () => {
                         text: m.text,
                         sender: m.sender,
                         timestamp: new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        translation: m.translation
+                        translation: m.translation,
+                        tts_voice: m.tts_voice
                     }));
                     setMessages(mappedMessages);
                 }
@@ -49,17 +81,30 @@ const PracticeChat = () => {
             }
         };
         loadHistory();
+    }, [API_BASE]);
 
-        const socket = new WebSocket(`ws://127.0.0.1:8000/ws/chat/${conversationId}`);
+    // WebSocket Setup - only once on mount
+    useEffect(() => {
+        const conversationId = localStorage.getItem("currentConversationId") || "demo-session";
+        const socket = new WebSocket(`${API_BASE.replace('http', 'ws')}/ws/chat/${conversationId}`);
+
+        socket.onopen = () => {
+            console.log("WebSocket connected");
+        };
 
         socket.onmessage = async (event) => {
             const data = JSON.parse(event.data);
+
+            if (data.sender === "ai") {
+                setIsThinking(false);
+            }
+
             let translation = "";
 
             // Fetch translation if AI message and toggle is on
-            if (data.sender === "ai" && isTranslating) {
+            if (data.sender === "ai" && isTranslatingRef.current) {
                 try {
-                    const transRes = await fetch("http://127.0.0.1:8000/translate", {
+                    const transRes = await fetch(`${API_BASE}/translate`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ text: data.text, target_lang: "en" })
@@ -74,18 +119,28 @@ const PracticeChat = () => {
             }
 
             setMessages((prev) => {
-                // Prevent duplicate messages from broadcast
-                const isDuplicate = prev.some(m => m.text === data.text && m.timestamp === new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+                // Prevent duplicate messages using the unique ID from backend
+                const isDuplicate = prev.some(m => m.id === data.id.toString());
                 if (isDuplicate) return prev;
 
                 return [...prev, {
-                    id: Date.now().toString(),
+                    id: data.id.toString(),
                     text: data.text,
                     sender: data.sender,
                     timestamp: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                    translation: translation
+                    translation: translation,
+                    tts_voice: data.tts_voice
                 }];
             });
+        };
+
+        socket.onerror = (err) => {
+            console.error("WebSocket error:", err);
+            setIsThinking(false);
+        };
+
+        socket.onclose = () => {
+            console.log("WebSocket disconnected");
         };
 
         socketRef.current = socket;
@@ -93,7 +148,7 @@ const PracticeChat = () => {
         return () => {
             socket.close();
         };
-    }, [isTranslating]); // Reconnect/Rebind when translation toggle changes to capture effect
+    }, [API_BASE]); // Reconnect only if API_BASE or conversationId changes (the latter is static here)
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -101,7 +156,7 @@ const PracticeChat = () => {
 
     useEffect(() => {
         scrollToBottom();
-    }, [messages]);
+    }, [messages, isThinking]);
 
     useEffect(() => {
         if (!isTranslating) return;
@@ -110,7 +165,7 @@ const PracticeChat = () => {
                 translateMessage(msg.id, msg.text);
             }
         });
-    }, [isTranslating, messages.length]);
+    }, [isTranslating]); // Only trigger on toggle
 
     const handleSendMessage = () => {
         if (!inputValue.trim() || !socketRef.current) return;
@@ -122,11 +177,12 @@ const PracticeChat = () => {
 
         socketRef.current.send(JSON.stringify(messagePayload));
         setInputValue("");
+        setIsThinking(true); // AI will process the message
     };
 
     const translateMessage = async (id: string, text: string) => {
         try {
-            const res = await fetch("http://127.0.0.1:8000/translate", {
+            const res = await fetch(`${API_BASE}/translate`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ text, target_lang: "en" })
@@ -140,50 +196,84 @@ const PracticeChat = () => {
         }
     };
 
+    const playTTS = async (messageId: string, text: string, voice?: string) => {
+        if (playingMessageId) return;
+
+        setPlayingMessageId(messageId);
+
+        try {
+            const langCode = localStorage.getItem("selectedLanguage") || "ig";
+            const effectiveVoice = voice || LANG_DEFAULT_VOICE[langCode] || "Idera";
+
+            // Using GET endpoint allows the browser to handle streaming natively
+            const url = `${API_BASE}/tts?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(effectiveVoice)}`;
+
+            const audio = new Audio(url);
+
+            audio.onplay = () => {
+                console.log("TTS playback started");
+            };
+
+            audio.onended = () => {
+                setPlayingMessageId(null);
+            };
+
+            audio.onerror = (e) => {
+                console.error("Audio playback error", e);
+                setPlayingMessageId(null);
+            };
+
+            // Start playing immediately as data arrives
+            audio.play();
+        } catch (e) {
+            console.error("TTS setup failed", e);
+            setPlayingMessageId(null);
+        }
+    };
+
     return (
         <div className="flex flex-col h-screen bg-[#fdfaff]">
             {/* Header */}
             <header className="bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between shadow-sm sticky top-0 z-10">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 md:gap-4">
                     <button
                         onClick={() => navigate("/select-topic")}
-                        className="p-2 hover:bg-gray-50 rounded-full transition-colors"
+                        className="p-1.5 md:p-2 hover:bg-gray-50 rounded-full transition-colors"
                     >
                         <ArrowLeft className="w-5 h-5 text-gray-500" />
                     </button>
 
                     <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-[#9810fa] rounded-lg flex items-center justify-center">
+                        <div className="w-8 h-8 bg-[#9810fa] shrink-0 rounded-lg flex items-center justify-center">
                             <span className="text-white font-bold text-xs">F</span>
                         </div>
-                        <span className="font-bold text-lg text-gray-800 tracking-tight">FluentRoot</span>
+                        <span className="hidden sm:inline font-bold text-lg text-gray-800 tracking-tight">FluentRoot</span>
                     </div>
 
                     <div className="hidden md:flex items-center gap-2 ml-4">
                         <div className="bg-[#f8f0ff] px-3 py-1 rounded-full flex items-center gap-2 border border-[#9810fa]/10">
-                            <span className="text-[10px] font-bold text-[#9810fa] bg-white w-4 h-4 rounded-full flex items-center justify-center">NG</span>
-                            <span className="text-xs font-semibold text-[#9810fa]">Igbo</span>
+                            <span className="text-[10px] font-bold text-[#9810fa] bg-white w-4 h-4 rounded-full flex items-center justify-center">
+                                {localStorage.getItem("selectedLanguage")?.toUpperCase() || "NG"}
+                            </span>
+                            <span className="text-xs font-semibold text-[#9810fa]">{selectedLanguage}</span>
                         </div>
                         <div className="bg-white px-3 py-1 rounded-full flex items-center gap-2 border border-gray-100 shadow-sm">
-                            <span className="text-xs font-semibold text-gray-600">Shopping & Markets</span>
+                            <span className="text-xs font-semibold text-gray-600">{selectedTopic}</span>
                         </div>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 px-3 py-1.5 rounded-xl transition-colors">
-                        <Languages className="w-4 h-4 text-[#9810fa]" />
-                        <span className="text-xs font-bold text-[#9810fa] uppercase tracking-wider">Translations</span>
+                <div className="flex items-center gap-2 md:gap-4">
+                    <div className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 px-2 md:px-3 py-1.5 rounded-xl transition-colors">
+                        <Languages className="w-4 h-4 text-[#9810fa] shrink-0" />
+                        <span className="hidden md:inline text-xs font-bold text-[#9810fa] uppercase tracking-wider">Translations</span>
                         <div
                             onClick={() => setIsTranslating(!isTranslating)}
-                            className={`w-10 h-5 rounded-full relative transition-colors ${isTranslating ? 'bg-[#9810fa]' : 'bg-gray-200'}`}
+                            className={`w-10 h-5 rounded-full relative transition-colors shrink-0 ${isTranslating ? 'bg-[#9810fa]' : 'bg-gray-200'}`}
                         >
                             <div className={`absolute top-0.5 transition-all w-4 h-4 bg-white rounded-full ${isTranslating ? 'left-5.5' : 'left-0.5'}`} />
                         </div>
                     </div>
-                    <button className="p-2 hover:bg-gray-50 rounded-full transition-colors">
-                        <MoreVertical className="w-5 h-5 text-gray-400" />
-                    </button>
                 </div>
             </header>
 
@@ -194,7 +284,7 @@ const PracticeChat = () => {
                         key={message.id}
                         className={`flex flex-col ${message.sender === 'user' ? 'items-end' : 'items-start'}`}
                     >
-                        <div className={`max-w-[80%] md:max-w-2xl relative group ${message.sender === 'user'
+                        <div className={`max-w-[85%] md:max-w-2xl relative group ${message.sender === 'user'
                             ? 'bg-[#9810fa] text-white rounded-2xl rounded-tr-none py-3 px-4 shadow-lg shadow-[#9810fa]/10'
                             : 'bg-white border border-gray-100 rounded-2xl rounded-tl-none py-3 px-4 shadow-sm'
                             }`}>
@@ -210,8 +300,12 @@ const PracticeChat = () => {
                         <div className={`flex items-center gap-2 mt-1 px-1 ${message.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                             <span className="text-[10px] font-medium text-gray-400">{message.timestamp}</span>
                             {message.sender === 'ai' && (
-                                <button className="p-1 hover:bg-[#f8f0ff] rounded-full transition-colors group">
-                                    <Volume2 className="w-3.5 h-3.5 text-gray-300 group-hover:text-[#9810fa]" />
+                                <button
+                                    onClick={() => playTTS(message.id, message.text, message.tts_voice)}
+                                    disabled={playingMessageId === message.id}
+                                    className={`p-1 hover:bg-[#f8f0ff] rounded-full transition-colors group ${playingMessageId === message.id ? 'animate-pulse' : ''}`}
+                                >
+                                    <Volume2 className={`w-3.5 h-3.5 ${playingMessageId === message.id ? 'text-[#9810fa]' : 'text-gray-300'} group-hover:text-[#9810fa]`} />
                                 </button>
                             )}
                             {message.sender === 'user' && (
@@ -220,6 +314,20 @@ const PracticeChat = () => {
                         </div>
                     </div>
                 ))}
+
+                {/* Thinking Indicator */}
+                {isThinking && (
+                    <div className="flex flex-col items-start">
+                        <div className="bg-white border border-gray-100 rounded-2xl rounded-tl-none py-3 px-4 shadow-sm">
+                            <div className="flex gap-1">
+                                <span className="w-1.5 h-1.5 bg-[#9810fa] rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                                <span className="w-1.5 h-1.5 bg-[#9810fa] rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                                <span className="w-1.5 h-1.5 bg-[#9810fa] rounded-full animate-bounce"></span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div ref={messagesEndRef} />
             </main>
 
@@ -232,11 +340,11 @@ const PracticeChat = () => {
                         </button>
                         <input
                             type="text"
-                            placeholder="Type your message in Igbo..."
+                            placeholder="Enter message..."
                             value={inputValue}
                             onChange={(e) => setInputValue(e.target.value)}
                             onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                            className="flex-1 bg-transparent border-none outline-none text-sm md:text-base text-gray-700 px-2 py-1 placeholder:text-gray-400"
+                            className="flex-1 min-w-0 bg-transparent border-none outline-none text-sm md:text-base text-gray-700 px-2 py-1 placeholder:text-gray-400"
                         />
                         <button
                             onClick={handleSendMessage}
@@ -249,7 +357,7 @@ const PracticeChat = () => {
                             <Send className="w-5 h-5" />
                         </button>
                     </div>
-                    <p className="text-[10px] text-center text-gray-400 mt-3 font-medium">
+                    <p className="hidden sm:block text-[10px] text-center text-gray-400 mt-2 md:mt-3 font-medium">
                         FluentRoot AI is here to help you practice. Press Enter to send, or use the microphone for voice input.
                     </p>
                 </div>

@@ -34,8 +34,8 @@ const Navbar = () => {
     };
 
     return (
-        <nav className="flex justify-between items-center px-10 border-b-2 border-gray-100 w-full h-20 shadow-md fixed top-0 left-0 right-0 z-50 bg-white">
-            <Link to="/"> <h1 className="font-bold text-3xl text-[#9810fa]">FluentRoot</h1></Link>
+        <nav className="flex justify-between items-center px-4 md:px-10 border-b-2 border-gray-100 w-full h-20 shadow-md fixed top-0 left-0 right-0 z-50 bg-white">
+            <Link to="/"> <h1 className="font-bold text-xl md:text-3xl text-[#9810fa]">FluentRoot</h1></Link>
 
             <div className="flex items-center gap-4">
                 {isLoggedIn ? (
@@ -47,7 +47,7 @@ const Navbar = () => {
                     </button>
                 ) : (
                     <Link to="/Login">
-                        <div className="bg-[#9810fa] px-6 py-2 rounded-full cursor-pointer hover:bg-[#8000de] transition-colors text-white font-medium shadow-lg shadow-[#9810fa]/20">
+                        <div className="bg-[#9810fa] px-4 md:px-6 py-2 rounded-full cursor-pointer hover:bg-[#8000de] transition-colors text-white font-medium shadow-lg shadow-[#9810fa]/20 text-sm md:text-base">
                             Get Started
                         </div>
                     </Link>

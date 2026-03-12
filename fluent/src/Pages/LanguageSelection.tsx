@@ -15,19 +15,19 @@ const LanguageSelection = () => {
     const [selected, setSelected] = useState<string | null>(null);
 
     return (
-        <div className="min-h-screen bg-[#fdfaff] py-16 px-10">
+        <div className="min-h-screen bg-[#fdfaff] py-8 md:py-16 px-4 md:px-10">
             <button
                 onClick={() => navigate('/dashboard')}
-                className="flex items-center gap-2 text-[#9810fa] font-semibold mb-12 hover:gap-3 transition-all"
+                className="flex items-center gap-2 text-[#9810fa] font-semibold mb-8 md:mb-12 hover:gap-3 transition-all text-sm md:text-base"
             >
-                <ArrowLeft className="w-5 h-5" />
+                <ArrowLeft className="w-4 h-4 md:w-5 md:h-5" />
                 <span>Back to Conversations</span>
             </button>
 
             <div className="max-w-5xl mx-auto">
-                <div className="text-center mb-16">
-                    <h1 className="text-4xl font-bold text-gray-900 mb-4">Choose Your Language</h1>
-                    <p className="text-gray-500 text-lg">Select the language you want to practice</p>
+                <div className="text-center mb-10 md:mb-16">
+                    <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3 md:mb-4">Choose Your Language</h1>
+                    <p className="text-gray-500 text-base md:text-lg">Select the language you want to practice</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
@@ -35,23 +35,23 @@ const LanguageSelection = () => {
                         <div
                             key={lang.id}
                             onClick={() => setSelected(lang.id)}
-                            className={`p-8 bg-white rounded-3xl border-2 transition-all cursor-pointer flex items-center gap-6 group ${selected === lang.id
+                            className={`p-6 md:p-8 bg-white rounded-3xl border-2 transition-all cursor-pointer flex items-center gap-4 md:gap-6 group ${selected === lang.id
                                 ? 'border-[#9810fa] shadow-xl shadow-purple-500/10'
                                 : 'border-white hover:border-gray-100 shadow-sm hover:shadow-md'
                                 }`}
                         >
-                            <div className="w-20 h-20 rounded-2xl bg-gray-50 flex items-center justify-center text-3xl font-bold text-gray-600 group-hover:scale-105 transition-transform">
+                            <div className="w-16 h-16 md:w-20 md:h-20 shrink-0 rounded-2xl bg-gray-50 flex items-center justify-center text-2xl md:text-3xl font-bold text-gray-600 group-hover:scale-105 transition-transform">
                                 {lang.icon}
                             </div>
                             <div>
-                                <h3 className="text-2xl font-bold text-gray-900">{lang.name}</h3>
-                                <p className="text-gray-500">{lang.sub}</p>
+                                <h3 className="text-xl md:text-2xl font-bold text-gray-900">{lang.name}</h3>
+                                <p className="text-gray-500 text-sm md:text-base">{lang.sub}</p>
                             </div>
                         </div>
                     ))}
                 </div>
 
-                <div className="mt-16 flex justify-end">
+                <div className="mt-12 md:mt-16 flex justify-center md:justify-end w-full">
                     <button
                         disabled={!selected}
                         onClick={() => {
@@ -60,7 +60,7 @@ const LanguageSelection = () => {
                                 navigate('/select-topic');
                             }
                         }}
-                        className={`flex items-center gap-2 px-10 py-4 rounded-xl font-bold transition-all ${selected
+                        className={`flex items-center justify-center gap-2 px-8 w-full md:w-auto md:px-10 py-4 rounded-xl font-bold transition-all ${selected
                             ? 'bg-[#9810fa] text-white shadow-lg shadow-purple-500/20 hover:scale-105 active:scale-95'
                             : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                             }`}

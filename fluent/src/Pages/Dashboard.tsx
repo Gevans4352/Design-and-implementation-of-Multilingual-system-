@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Search, Plus, Edit2, Trash2, LogOut, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import WelcomeModal from '../Component/WelcomeModal';
+import { supabase } from '../supabaseClient';
 
 const Dashboard = () => {
     const [showWelcome, setShowWelcome] = useState(false);
@@ -22,12 +23,17 @@ const Dashboard = () => {
     }, []);
 
     const fetchConversations = async () => {
-        const userStr = localStorage.getItem("user");
-        if (!userStr) return;
-        const user = JSON.parse(userStr);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            navigate("/Login");
+            return;
+        }
+        const user = session.user;
 
         try {
-            const response = await fetch(`http://127.0.0.1:8000/conversations/${user.id}`);
+            // Updated to fetch conversations for the Supabase UUID
+            const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8006";
+            const response = await fetch(`${API_BASE}/conversations/${user.id}`);
             if (response.ok) {
                 const data = await response.json();
                 setConversations(data);
@@ -57,7 +63,8 @@ const Dashboard = () => {
         setConfirmId(null);
 
         try {
-            const response = await fetch(`http://127.0.0.1:8000/conversations/${conversationId}`, {
+            const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8006";
+            const response = await fetch(`${API_BASE}/conversations/${conversationId}`, {
                 method: "DELETE",
             });
 
@@ -79,8 +86,8 @@ const Dashboard = () => {
             {/* Toast Notification */}
             {toast && (
                 <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-100 px-6 py-3 rounded-2xl shadow-2xl border transition-all animate-in fade-in slide-in-from-top-4 ${toast.type === 'success'
-                        ? 'bg-white border-green-100 text-green-600'
-                        : 'bg-white border-red-100 text-red-600'
+                    ? 'bg-white border-green-100 text-green-600'
+                    : 'bg-white border-red-100 text-red-600'
                     }`}>
                     <div className="flex items-center gap-3 font-bold">
                         {toast.type === 'success' ? <Sparkles className="w-5 h-5" /> : <Plus className="w-5 h-5 rotate-45" />}
@@ -114,26 +121,26 @@ const Dashboard = () => {
             )}
 
             {/* Dashboard Nav */}
-            <nav className="flex items-center justify-between px-10 py-4 bg-white border-b border-gray-100">
+            <nav className="flex items-center justify-between px-4 md:px-10 py-4 bg-white border-b border-gray-100">
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-lg bg-[#f3e8ff] flex items-center justify-center">
                         <Sparkles className="w-5 h-5 text-[#9810fa]" />
                     </div>
-                    <span className="text-xl font-bold text-gray-900">FluentRoot</span>
+                    <span className="text-lg md:text-xl font-bold text-gray-900">FluentRoot</span>
                 </div>
                 <button
                     onClick={() => navigate('/')}
-                    className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+                    className="flex items-center gap-1 md:gap-2 text-gray-600 hover:text-gray-900 transition-colors"
                 >
                     <LogOut className="w-4 h-4" />
-                    <span>Logout</span>
+                    <span className="hidden sm:inline">Logout</span>
                 </button>
             </nav>
 
-            <main className="max-w-4xl mx-auto py-12 px-6">
-                <div className="mb-10">
-                    <h1 className="text-3xl font-bold text-gray-900 mb-2">My Conversations</h1>
-                    <p className="text-gray-500">Continue your language learning journey</p>
+            <main className="max-w-4xl mx-auto py-8 md:py-12 px-4 md:px-6">
+                <div className="mb-8 md:mb-10">
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">My Conversations</h1>
+                    <p className="text-gray-500 text-sm md:text-base">Continue your language learning journey</p>
                 </div>
 
                 <div className="relative mb-8">
@@ -168,10 +175,10 @@ const Dashboard = () => {
                                             {conv.language.substring(0, 2)}
                                         </div>
                                         <div>
-                                            <h3 className="font-bold text-gray-900 text-lg group-hover:text-[#9810fa] transition-colors">
+                                            <h3 className="font-bold text-gray-900 text-base md:text-lg group-hover:text-[#9810fa] transition-colors line-clamp-1">
                                                 {conv.language} {conv.topic}
                                             </h3>
-                                            <p className="text-gray-500 italic mb-2">{conv.last_message || "Start practicing..."}</p>
+                                            <p className="text-gray-500 italic mb-1 md:mb-2 text-sm line-clamp-1">{conv.last_message || "Start practicing..."}</p>
                                             <span className="text-xs text-gray-400">
                                                 {new Date(conv.updated_at).toLocaleDateString()}
                                             </span>
@@ -200,9 +207,9 @@ const Dashboard = () => {
 
             <button
                 onClick={handleCreateNew}
-                className="fixed bottom-10 right-10 w-16 h-16 bg-[#9810fa] text-white rounded-full flex items-center justify-center shadow-2xl hover:bg-[#8000de] transition-all hover:scale-110 active:scale-95"
+                className="fixed bottom-6 right-6 md:bottom-10 md:right-10 w-14 h-14 md:w-16 md:h-16 bg-[#9810fa] text-white rounded-full flex items-center justify-center shadow-2xl hover:bg-[#8000de] transition-all hover:scale-110 active:scale-95"
             >
-                <Plus className="w-8 h-8" />
+                <Plus className="w-6 h-6 md:w-8 md:h-8" />
             </button>
 
             <WelcomeModal

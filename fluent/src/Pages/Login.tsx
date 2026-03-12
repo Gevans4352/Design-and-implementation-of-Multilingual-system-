@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { Eye, EyeOff } from "lucide-react"
+import { supabase } from "../supabaseClient"
 
 const Login = () => {
     const [email, setEmail] = useState("")
@@ -16,26 +17,24 @@ const Login = () => {
         setError("")
 
         try {
-            const response = await fetch("http://127.0.0.1:8001/login", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ email, password }),
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
             })
 
-            const data = await response.json()
-
-            if (response.ok) {
-                console.log("Login successful:", data)
+            if (error) {
+                setError(error.message)
+            } else if (data.user) {
+                console.log("Login successful:", data.user)
                 localStorage.setItem("isLoggedIn", "true")
-                localStorage.setItem("user", JSON.stringify(data.user))
+                localStorage.setItem("user", JSON.stringify({
+                    email: data.user.email,
+                    id: data.user.id
+                }))
                 navigate("/dashboard")
-            } else {
-                setError(data.detail || "Invalid email or password")
             }
         } catch (err) {
-            setError("Could not connect to the server")
+            setError("An unexpected error occurred")
         } finally {
             setLoading(false)
         }
@@ -43,9 +42,9 @@ const Login = () => {
 
     return (
         <div className="flex items-center justify-center min-h-[calc(100vh-80px)] w-full bg-gray-50/50">
-            <div className="w-full max-w-md bg-white border border-gray-100 rounded-3xl shadow-xl shadow-gray-200/50 p-8 m-4">
-                <div className="text-center mb-10">
-                    <h2 className="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h2>
+            <div className="w-full max-w-md bg-white border border-gray-100 rounded-3xl shadow-xl shadow-gray-200/50 p-6 md:p-8 mx-4 my-8">
+                <div className="text-center mb-8 md:mb-10">
+                    <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Welcome Back</h2>
                     <p className="text-gray-500">Please enter your details to sign in</p>
                 </div>
 

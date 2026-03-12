@@ -24,6 +24,7 @@ import {
     Smile,
     Quote
 } from "lucide-react";
+import { supabase } from "../supabaseClient";
 
 const topics = [
     { id: "greetings", title: "Greetings & Introductions", desc: "Learn how to greet people and introduce yourself", icon: Hand },
@@ -50,6 +51,8 @@ const topics = [
 
 const TopicSelection = () => {
     const [searchTerm, setSearchTerm] = useState("");
+    const [selecting, setSelecting] = useState<string | null>(null);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const navigate = useNavigate();
 
     const filteredTopics = topics.filter(t =>
@@ -57,44 +60,77 @@ const TopicSelection = () => {
         t.desc.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
+    const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8006";
+
     const handleSelectTopic = async (topicId: string) => {
+        if (selecting) return; // Prevent double clicks
+        setSelecting(topicId);
+        setErrorMsg(null);
+
         const topic = topics.find(t => t.id === topicId);
-        const language = localStorage.getItem("selectedLanguage") || "Unknown";
-        const userStr = localStorage.getItem("user");
-        if (!userStr) return;
-        const user = JSON.parse(userStr);
+        const language = localStorage.getItem("selectedLanguage") || "ig";
+
+        // Try getSession first, fall back to getUser if session is stale
+        let userId: string | null = null;
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+                userId = session.user.id;
+            } else {
+                // Refresh session
+                const { data: { user } } = await supabase.auth.getUser();
+                userId = user?.id ?? null;
+            }
+        } catch (e) {
+            console.error("Auth check failed:", e);
+        }
+
+        if (!userId) {
+            navigate("/Login");
+            return;
+        }
 
         const convId = `conv_${Date.now()}`;
 
         try {
-            await fetch("http://127.0.0.1:8000/conversations", {
+            const res = await fetch(`${API_BASE}/conversations`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     id: convId,
-                    user_id: user.id,
+                    user_id: userId,
                     language: language,
                     topic: topic?.title || topicId
                 })
             });
 
-            localStorage.setItem("selectedTopic", topicId);
-            localStorage.setItem("currentConversationId", convId);
-            navigate("/practice");
+            if (!res.ok) {
+                console.warn("Conversation creation returned non-ok status:", res.status);
+            }
         } catch (err) {
             console.error("Failed to create conversation:", err);
-            // Fallback: still navigate but might not persist
-            localStorage.setItem("currentConversationId", convId);
-            navigate("/practice");
+            setErrorMsg("Could not connect to backend. Starting locally.");
         }
+
+        // Always navigate – conversation will be created on first message if backend missed it
+        localStorage.setItem("selectedTopic", topicId);
+        localStorage.setItem("selectedTopicTitle", topic?.title || topicId);
+        localStorage.setItem("selectedLanguage", language);
+        localStorage.setItem("currentConversationId", convId);
+        navigate("/practice");
     };
 
     return (
         <div className="min-h-screen bg-[#fdfaff] pb-12">
-            <div className="max-w-7xl mx-auto px-4 pt-12">
-                <div className="text-center mb-12">
-                    <h1 className="text-4xl font-bold text-gray-900 mb-4">Choose a Topic</h1>
-                    <p className="text-gray-600 text-lg">Select what you'd like to practice today</p>
+            <div className="max-w-7xl mx-auto px-4 pt-8 md:pt-12">
+                <div className="text-center mb-10 md:mb-12">
+                    <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3 md:mb-4">Choose a Topic</h1>
+                    <p className="text-gray-600 text-base md:text-lg">Select what you'd like to practice today</p>
+                    {errorMsg && (
+                        <p className="mt-3 text-sm text-orange-500 bg-orange-50 border border-orange-100 rounded-xl px-4 py-2 inline-block">
+                            ⚠️ {errorMsg}
+                        </p>
+                    )}
                 </div>
 
                 <div className="max-w-2xl mx-auto mb-12 relative">
@@ -109,19 +145,32 @@ const TopicSelection = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {filteredTopics.map((topic) => (
-                        <div
-                            key={topic.id}
-                            onClick={() => handleSelectTopic(topic.id)}
-                            className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-[#9810fa]/50 transition-all cursor-pointer text-center group"
-                        >
-                            <div className="w-16 h-16 bg-[#f8f0ff] rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
-                                <topic.icon className="w-8 h-8 text-[#9810fa]" />
+                    {filteredTopics.map((topic) => {
+                        const isLoading = selecting === topic.id;
+                        const isDisabled = !!selecting;
+                        return (
+                            <div
+                                key={topic.id}
+                                onClick={() => handleSelectTopic(topic.id)}
+                                className={`bg-white p-8 rounded-3xl border transition-all text-center group ${isLoading
+                                    ? 'border-[#9810fa]/50 shadow-xl shadow-[#9810fa]/10 scale-[0.98]'
+                                    : isDisabled
+                                        ? 'border-gray-100 shadow-sm opacity-50 cursor-not-allowed'
+                                        : 'border-gray-100 shadow-sm hover:shadow-xl hover:border-[#9810fa]/50 cursor-pointer'
+                                    }`}
+                            >
+                                <div className={`w-14 h-14 md:w-16 md:h-16 bg-[#f8f0ff] rounded-2xl flex items-center justify-center mx-auto mb-4 md:mb-6 transition-transform ${!isDisabled ? 'group-hover:scale-110' : ''
+                                    }`}>
+                                    {isLoading
+                                        ? <div className="w-5 h-5 md:w-6 md:h-6 border-2 border-[#9810fa] border-t-transparent rounded-full animate-spin" />
+                                        : <topic.icon className="w-6 h-6 md:w-8 md:h-8 text-[#9810fa]" />
+                                    }
+                                </div>
+                                <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">{topic.title}</h3>
+                                <p className="text-gray-500 text-sm leading-relaxed">{topic.desc}</p>
                             </div>
-                            <h3 className="text-xl font-bold text-gray-800 mb-2">{topic.title}</h3>
-                            <p className="text-gray-500 text-sm leading-relaxed">{topic.desc}</p>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 <div className="mt-12 text-center">

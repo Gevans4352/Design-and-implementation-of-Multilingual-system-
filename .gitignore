@@ -1,0 +1,11 @@
+# Environments
+.env
+
+# Virtual environments
+.venv/
+__pycache__/
+
+# Node
+node_modules/
+dist/
+.DS_Store

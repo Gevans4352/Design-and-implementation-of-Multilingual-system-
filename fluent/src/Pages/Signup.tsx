@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { Eye, EyeOff } from "lucide-react"
+import { supabase } from "../supabaseClient"
 
 const Signup = () => {
     const [fullName, setFullName] = useState("")
@@ -25,28 +26,30 @@ const Signup = () => {
         }
 
         try {
-            const response = await fetch("http://127.0.0.1:8000/signup", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ email, password }),
+            const { data, error } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: {
+                        full_name: fullName,
+                    }
+                }
             })
 
-            const data = await response.json()
-
-            if (response.ok) {
-                console.log("Signup successful:", data)
+            if (error) {
+                setError(error.message)
+            } else if (data.user) {
+                console.log("Signup successful:", data.user)
                 localStorage.setItem("isLoggedIn", "true")
-                // Signup response in main.py currently doesn't return user object, 
-                // but we should ideally get it. For now, we'll store a placeholder or re-login.
-                localStorage.setItem("user", JSON.stringify(data.user))
+                localStorage.setItem("user", JSON.stringify({
+                    email: data.user.email,
+                    id: data.user.id,
+                    full_name: fullName
+                }))
                 navigate("/dashboard")
-            } else {
-                setError(data.detail || "Signup failed")
             }
         } catch (err) {
-            setError("Could not connect to the server")
+            setError("An unexpected error occurred")
         } finally {
             setLoading(false)
         }
@@ -54,9 +57,9 @@ const Signup = () => {
 
     return (
         <div className="flex items-center justify-center min-h-[calc(100vh-80px)] w-full bg-gray-50/50 py-10">
-            <div className="w-full max-w-md bg-white border border-gray-100 rounded-3xl shadow-xl shadow-gray-200/50 p-8 m-4">
-                <div className="text-center mb-10">
-                    <h2 className="text-3xl font-bold text-gray-900 mb-2">Create Account</h2>
+            <div className="w-full max-w-md bg-white border border-gray-100 rounded-3xl shadow-xl shadow-gray-200/50 p-6 md:p-8 mx-4 my-8">
+                <div className="text-center mb-8 md:mb-10">
+                    <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Create Account</h2>
                     <p className="text-gray-500">Join FluentRoot to start your journey</p>
                 </div>
 
