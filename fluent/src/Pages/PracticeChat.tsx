@@ -34,7 +34,8 @@ const PracticeChat = () => {
     const [isTranslating, setIsTranslating] = useState(false);
     const [isThinking, setIsThinking] = useState(false);
     const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
-    const [selectedLanguage, setSelectedLanguage] = useState("Igbo");
+    const [selectedLanguage, setSelectedLanguage] = useState("");
+    const [langCode, setLangCode] = useState("");
     const [selectedTopic, setSelectedTopic] = useState("Conversation");
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const socketRef = useRef<WebSocket | null>(null);
@@ -47,20 +48,45 @@ const PracticeChat = () => {
 
     const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8006";
 
-    // Load History - only once on mount
+    // Load History and Metadata - only once on mount
     useEffect(() => {
-        const langCode = localStorage.getItem("selectedLanguage") || "ig";
-        const langMap: { [key: string]: string } = {
-            'en': 'English',
-            'fr': 'French',
-            'yo': 'Yoruba',
-            'ig': 'Igbo',
-            'ha': 'Hausa'
-        };
-        setSelectedLanguage(langMap[langCode] || "Igbo");
-        setSelectedTopic(localStorage.getItem("selectedTopicTitle") || "Conversation");
-
         const conversationId = localStorage.getItem("currentConversationId") || "demo-session";
+        
+        const loadMetadata = async () => {
+            try {
+                const response = await fetch(`${API_BASE}/conversations/single/${conversationId}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    const langMap: { [key: string]: string } = {
+                        'en': 'English',
+                        'fr': 'French',
+                        'yo': 'Yoruba',
+                        'ig': 'Igbo',
+                        'ha': 'Hausa',
+                        'es': 'Spanish'
+                    };
+                    setLangCode(data.language);
+                    setSelectedLanguage(langMap[data.language] || "English");
+                    setSelectedTopic(data.topic || "Conversation");
+                } else {
+                    // Fallback to localStorage if metadata fetch fails
+                    const storedLang = localStorage.getItem("selectedLanguage") || "ig";
+                    const langMap: { [key: string]: string } = {
+                        'en': 'English',
+                        'fr': 'French',
+                        'yo': 'Yoruba',
+                        'ig': 'Igbo',
+                        'ha': 'Hausa'
+                    };
+                    setLangCode(storedLang);
+                    setSelectedLanguage(langMap[storedLang] || "Igbo");
+                    setSelectedTopic(localStorage.getItem("selectedTopicTitle") || "Conversation");
+                }
+            } catch (err) {
+                console.error("Failed to load metadata:", err);
+            }
+        };
+
         const loadHistory = async () => {
             try {
                 const response = await fetch(`${API_BASE}/messages/${conversationId}`);
@@ -80,6 +106,8 @@ const PracticeChat = () => {
                 console.error("Failed to load history:", err);
             }
         };
+        
+        loadMetadata();
         loadHistory();
     }, [API_BASE]);
 
@@ -118,9 +146,9 @@ const PracticeChat = () => {
                 }
             }
 
-            setMessages((prev) => {
+            setMessages((prev: Message[]) => {
                 // Prevent duplicate messages using the unique ID from backend
-                const isDuplicate = prev.some(m => m.id === data.id.toString());
+                const isDuplicate = prev.some((m: Message) => m.id === data.id.toString());
                 if (isDuplicate) return prev;
 
                 return [...prev, {
@@ -160,7 +188,7 @@ const PracticeChat = () => {
 
     useEffect(() => {
         if (!isTranslating) return;
-        messages.forEach((msg) => {
+        messages.forEach((msg: Message) => {
             if (msg.sender === 'ai' && !msg.translation) {
                 translateMessage(msg.id, msg.text);
             }
@@ -189,7 +217,7 @@ const PracticeChat = () => {
             });
             if (res.ok) {
                 const data = await res.json();
-                setMessages(prev => prev.map(m => m.id === id ? { ...m, translation: data.translatedText } : m));
+                setMessages((prev: Message[]) => prev.map((m: Message) => m.id === id ? { ...m, translation: data.translatedText } : m));
             }
         } catch (e) {
             console.error("translation failed", e);
@@ -202,7 +230,6 @@ const PracticeChat = () => {
         setPlayingMessageId(messageId);
 
         try {
-            const langCode = localStorage.getItem("selectedLanguage") || "ig";
             const effectiveVoice = voice || LANG_DEFAULT_VOICE[langCode] || "Idera";
 
             // Using GET endpoint allows the browser to handle streaming natively
@@ -253,7 +280,7 @@ const PracticeChat = () => {
                     <div className="hidden md:flex items-center gap-2 ml-4">
                         <div className="bg-[#f8f0ff] px-3 py-1 rounded-full flex items-center gap-2 border border-[#9810fa]/10">
                             <span className="text-[10px] font-bold text-[#9810fa] bg-white w-4 h-4 rounded-full flex items-center justify-center">
-                                {localStorage.getItem("selectedLanguage")?.toUpperCase() || "NG"}
+                                {langCode.toUpperCase() || "EN"}
                             </span>
                             <span className="text-xs font-semibold text-[#9810fa]">{selectedLanguage}</span>
                         </div>
@@ -342,8 +369,8 @@ const PracticeChat = () => {
                             type="text"
                             placeholder="Enter message..."
                             value={inputValue}
-                            onChange={(e) => setInputValue(e.target.value)}
-                            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInputValue(e.target.value)}
+                            onKeyPress={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleSendMessage()}
                             className="flex-1 min-w-0 bg-transparent border-none outline-none text-sm md:text-base text-gray-700 px-2 py-1 placeholder:text-gray-400"
                         />
                         <button
