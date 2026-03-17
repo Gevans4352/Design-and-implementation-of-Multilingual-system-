@@ -40,6 +40,7 @@ const Signup = () => {
                 setError(error.message)
             } else if (data.user) {
                 console.log("Signup successful:", data.user)
+                localStorage.removeItem("pendingLogout") // clear any stale logout flag
                 localStorage.setItem("isLoggedIn", "true")
                 sessionStorage.setItem("tabSessionActive", "true")
                 localStorage.setItem("user", JSON.stringify({

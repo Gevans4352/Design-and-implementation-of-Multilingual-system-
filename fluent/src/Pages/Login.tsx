@@ -26,6 +26,7 @@ const Login = () => {
                 setError(error.message)
             } else if (data.user) {
                 console.log("Login successful:", data.user)
+                localStorage.removeItem("pendingLogout") // clear any stale logout flag
                 localStorage.setItem("isLoggedIn", "true")
                 sessionStorage.setItem("tabSessionActive", "true")
                 localStorage.setItem("user", JSON.stringify({
