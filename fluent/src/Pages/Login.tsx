@@ -27,6 +27,7 @@ const Login = () => {
             } else if (data.user) {
                 console.log("Login successful:", data.user)
                 localStorage.setItem("isLoggedIn", "true")
+                sessionStorage.setItem("tabSessionActive", "true")
                 localStorage.setItem("user", JSON.stringify({
                     email: data.user.email,
                     id: data.user.id

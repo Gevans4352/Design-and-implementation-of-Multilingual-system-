@@ -9,10 +9,12 @@ import LanguageSelection from './Pages/LanguageSelection'
 import TopicSelection from './Pages/TopicSelection'
 import PracticeChat from './Pages/PracticeChat'
 import ProtectedRoute from './Component/ProtectedRoute'
+import AutoLogout from './Component/AutoLogout'
 
 const App = () => {
   return (
     <BrowserRouter>
+      <AutoLogout />
       <div className="pt-20">
         <Navbar />
         <Routes>
