@@ -8,8 +8,8 @@ import Footer from "./Footer"
 const Home = () => {
     return (
         <div className="flex flex-col">
-            <div className="flex flex-col md:flex-row px-4 md:px-10 items-center justify-between min-h-[calc(100vh-80px)] gap-10 py-10 md:py-0 mt-20 md:mt-0">
-                <div className="w-full md:w-1/2 mt-10 md:mt-0">
+            <div className="flex flex-col md:flex-row px-4 md:px-10 items-center justify-between min-h-[calc(100vh-80px)] gap-6 md:gap-10 pt-4 pb-8 md:py-0 md:mt-0">
+                <div className="w-full md:w-1/2 mt-2 md:mt-0">
                     <h4 className="rounded-full bg-[#f3e8ff] text-[#b169ef] px-4 py-2 w-fit mb-4 text-sm md:text-base">Preserving Cultural Heritage Through Technology</h4>
                     <h1 className="text-4xl md:text-6xl font-bold text-gray-900 leading-tight">Master Multiple <br className="hidden md:block" /> Languages with <br className="hidden md:block" /><span className="text-[#9810fa]">FluentRoot</span></h1>
                     <p className="text-gray-600 text-base md:text-lg mt-4 w-full max-w-2xl">Your AI-powered companion for learning English, French, Yoruba, Igbo, and Hausa. Connect with your cultural roots while mastering new languages.</p>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Plus, Edit2, Trash2, LogOut, Sparkles } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import WelcomeModal from '../Component/WelcomeModal';
 import { supabase } from '../supabaseClient';
@@ -120,22 +120,6 @@ const Dashboard = () => {
                 </div>
             )}
 
-            {/* Dashboard Nav */}
-            <nav className="flex items-center justify-between px-4 md:px-10 py-4 bg-white border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-[#f3e8ff] flex items-center justify-center">
-                        <Sparkles className="w-5 h-5 text-[#9810fa]" />
-                    </div>
-                    <span className="text-lg md:text-xl font-bold text-gray-900">FluentRoot</span>
-                </div>
-                <button
-                    onClick={() => navigate('/')}
-                    className="flex items-center gap-1 md:gap-2 text-gray-600 hover:text-gray-900 transition-colors"
-                >
-                    <LogOut className="w-4 h-4" />
-                    <span className="hidden sm:inline">Logout</span>
-                </button>
-            </nav>
 
             <main className="max-w-4xl mx-auto py-8 md:py-12 px-4 md:px-6">
                 <div className="mb-8 md:mb-10">
