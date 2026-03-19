@@ -110,7 +110,7 @@ def _call_openai(messages: list) -> Optional[str]:
             model="gpt-3.5-turbo",
             messages=messages,
             temperature=0.7,
-            max_tokens=300,
+            max_tokens=600,
         )
         return resp.choices[0].message.content.strip()
     except Exception as e:
@@ -162,41 +162,56 @@ def _call_gemini(messages: list) -> Optional[str]:
 
 def generate_ai_response(history: List[dict], target_lang: str) -> str:
     """
-    Generate a chat response.
+    Generate a casual, natural chat response — like talking to ChatGPT.
+    Always responds in the user's selected language (target_lang), regardless
+    of what language the user types in.
     OpenAI is tried first, Gemini is the fallback.
-    Works for ALL languages: Igbo, Hausa, Yoruba, French, English, etc.
     YarnGPT is NOT used here - it handles TTS only.
     """
     lang_name = LANG_NAMES.get(target_lang, "English")
     fallback  = FALLBACKS.get(target_lang, FALLBACKS["en"])
 
     system_prompt = (
-        f"You are a friendly and highly capable language learning assistant. "
-        f"You are a native {lang_name} speaker helping the user learn {lang_name}. "
-        f"CRITICAL RULE: You MUST reply ENTIRELY in {lang_name}. "
-        f"NEVER switch to English or any other language under any circumstances. "
-        f"Keep responses concise (2-4 sentences). "
-        f"Gently correct any {lang_name} mistakes the user makes."
+        f"You are a witty, warm, and genuinely engaging conversational AI. "
+        f"Think of yourself as that one friend who's always fun to talk to — "
+        f"incredibly knowledgeable, but never condescending about it. "
+        f"Your goal is to have a real, flowing conversation that feels completely human and natural. "
+        f"\n\n"
+        f"LANGUAGE RULE: You MUST always reply in {lang_name}, no matter what language the user "
+        f"writes in. Even if they message you in English, Pidgin, or any other language, your "
+        f"response must be entirely in {lang_name}. Never deviate from this."
+        f"\n\n"
+        f"TONE & STYLE:\n"
+        f"- Be casual, warm, and conversational — like texting a smart friend, not reading a textbook.\n"
+        f"- Use contractions, informal phrasing, and the occasional light humour where it fits.\n"
+        f"- Ask follow-up questions to keep the conversation going naturally.\n"
+        f"- Match the user's energy: if they're being playful, be playful back; if they're serious, be thoughtful.\n"
+        f"- Keep responses concise but satisfying — no bullet-point essays unless they explicitly ask for one.\n"
+        f"- Never start a reply with 'Certainly!', 'Of course!', 'Absolutely!', or any robotic filler phrase.\n"
+        f"- Avoid sounding like a customer service bot or a Wikipedia article.\n"
+        f"\n"
+        f"You are NOT a language tutor unless the user specifically asks for language help. "
+        f"Just have a genuine, enjoyable conversation — in {lang_name}."
     )
 
     messages = [{"role": "system", "content": system_prompt}]
-    for msg in history[-6:]:
+    for msg in history[-12:]:  # wider context window for more natural conversation flow
         role = "user" if msg.get("sender") == "user" else "assistant"
         messages.append({"role": role, "content": msg.get("text", "")})
 
     # Try OpenAI first
-    print(f"[ROUTE] {lang_name} -> OpenAI")
+    print(f"[ROUTE] Casual chat -> OpenAI")
     result = _call_openai(messages)
     if result:
         return result
 
     # Fall back to Gemini
-    print(f"[FALLBACK] OpenAI failed, trying Gemini for {lang_name}.")
+    print(f"[FALLBACK] OpenAI failed, trying Gemini.")
     result = _call_gemini(messages)
     if result:
         return result
 
-    print(f"[WARN] Both OpenAI and Gemini failed for {lang_name}.")
+    print(f"[WARN] Both OpenAI and Gemini failed.")
     return fallback
 
 
@@ -295,6 +310,18 @@ async def login(auth: UserAuth):
 
 
 # ── Conversations ─────────────────────────────────────────────────────────────
+@app.get("/conversations/single/{conversation_id}")
+async def get_single_conversation(conversation_id: str):
+    try:
+        resp = supabase.table("conversations").select("*").eq("id", conversation_id).execute()
+        if not resp.data:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return resp.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/conversations/{user_id}")
 async def get_conversations(user_id: str):
     try:
