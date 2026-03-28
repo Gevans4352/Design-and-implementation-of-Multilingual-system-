@@ -1,11 +1,11 @@
 import os
 import json
-import time
+import asyncio
 from datetime import datetime
 from typing import List, Optional
 
 import uvicorn
-import requests
+import httpx
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -20,8 +20,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 # ── OpenAI ────────────────────────────────────────────────────────────────────
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if OPENAI_API_KEY:
-    from openai import OpenAI as _OpenAI
-    openai_client = _OpenAI(api_key=OPENAI_API_KEY)
+    from openai import AsyncOpenAI
+    openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
     print("[OK] OPENAI_API_KEY found.")
 else:
     openai_client = None
@@ -97,16 +97,15 @@ FALLBACKS = {
 
 
 # =============================================================================
-# CHAT: OpenAI + Gemini
+# CHAT: OpenAI + Gemini  (fully async, raced in parallel)
 # =============================================================================
 
-def _call_openai(messages: list) -> Optional[str]:
-    """Call OpenAI GPT-3.5-turbo. Returns text or None on failure."""
+async def _call_openai(messages: list) -> Optional[str]:
+    """Async call to OpenAI GPT-3.5-turbo. Returns text or None on failure."""
     if not openai_client:
-        print("[WARN] OpenAI client not initialised.")
         return None
     try:
-        resp = openai_client.chat.completions.create(
+        resp = await openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=messages,
             temperature=0.7,
@@ -118,20 +117,14 @@ def _call_openai(messages: list) -> Optional[str]:
     return None
 
 
-def _call_gemini(messages: list) -> Optional[str]:
-    """
-    Call Google Gemini 1.5 Flash.
-    Accepts the same messages list format as OpenAI for consistency.
-    Returns text or None on failure.
-    """
+async def _call_gemini(messages: list) -> Optional[str]:
+    """Async call to Google Gemini 2.5 Flash. Returns text or None on failure."""
     if not GOOGLE_GEMINI_API_KEY:
-        print("[WARN] Gemini key missing.")
         return None
     try:
-        # Convert messages to a single prompt string
         prompt_parts = []
         for msg in messages:
-            role = msg.get("role", "user")
+            role    = msg.get("role", "user")
             content = msg.get("content", "")
             if role == "system":
                 prompt_parts.append(f"[INSTRUCTIONS]: {content}")
@@ -146,12 +139,12 @@ def _call_gemini(messages: list) -> Optional[str]:
             "https://generativelanguage.googleapis.com/v1beta/models/"
             "gemini-2.5-flash:generateContent?key=" + GOOGLE_GEMINI_API_KEY
         )
-        resp = requests.post(
-            url,
-            headers={"Content-Type": "application/json"},
-            json={"contents": [{"parts": [{"text": full_prompt}]}]},
-            timeout=25,
-        )
+        async with httpx.AsyncClient(timeout=25) as client:
+            resp = await client.post(
+                url,
+                headers={"Content-Type": "application/json"},
+                json={"contents": [{"parts": [{"text": full_prompt}]}]},
+            )
         if resp.status_code == 200:
             return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
         print(f"[ERROR] Gemini {resp.status_code}: {resp.text}")
@@ -160,13 +153,11 @@ def _call_gemini(messages: list) -> Optional[str]:
     return None
 
 
-def generate_ai_response(history: List[dict], target_lang: str) -> str:
+async def generate_ai_response(history: List[dict], target_lang: str) -> str:
     """
-    Generate a casual, natural chat response — like talking to ChatGPT.
-    Always responds in the user's selected language (target_lang), regardless
-    of what language the user types in.
-    OpenAI is tried first, Gemini is the fallback.
-    YarnGPT is NOT used here - it handles TTS only.
+    Race OpenAI and Gemini in parallel — whichever responds first wins.
+    Always responds in the user's selected language (target_lang).
+    YarnGPT is NOT used here — it handles TTS only.
     """
     lang_name = LANG_NAMES.get(target_lang, "English")
     fallback  = FALLBACKS.get(target_lang, FALLBACKS["en"])
@@ -199,54 +190,62 @@ def generate_ai_response(history: List[dict], target_lang: str) -> str:
         role = "user" if msg.get("sender") == "user" else "assistant"
         messages.append({"role": role, "content": msg.get("text", "")})
 
-    # Try OpenAI first
-    print(f"[ROUTE] Casual chat -> OpenAI")
-    result = _call_openai(messages)
-    if result:
-        return result
-
-    # Fall back to Gemini
-    print(f"[FALLBACK] OpenAI failed, trying Gemini.")
-    result = _call_gemini(messages)
-    if result:
-        return result
+    # Race OpenAI and Gemini — first valid response wins
+    print(f"[ROUTE] Racing OpenAI vs Gemini for lang={target_lang}")
+    tasks = [
+        asyncio.create_task(_call_openai(messages)),
+        asyncio.create_task(_call_gemini(messages)),
+    ]
+    for coro in asyncio.as_completed(tasks):
+        try:
+            result = await coro
+            if result:
+                # Cancel the slower task to avoid wasted work
+                for t in tasks:
+                    t.cancel()
+                return result
+        except Exception:
+            continue
 
     print(f"[WARN] Both OpenAI and Gemini failed.")
     return fallback
 
 
 # =============================================================================
-# TTS: YarnGPT
+# TTS: YarnGPT  (async httpx streaming)
 # =============================================================================
 
-def _yarngpt_tts(text: str, voice: str) -> requests.Response:
-    """Call YarnGPT TTS API and return the streaming response."""
+async def _yarngpt_tts_stream(text: str, voice: str):
+    """Async generator that streams audio chunks from YarnGPT."""
     if not YARNGPT_API_KEY:
         raise ValueError("YARNGPT_API_KEY not configured")
-    return requests.post(
-        "https://yarngpt.ai/api/v1/tts",
-        headers={"Authorization": f"Bearer {YARNGPT_API_KEY}"},
-        json={"text": text, "voice": voice},
-        stream=True,
-        timeout=60,
-    )
+    async with httpx.AsyncClient(timeout=60) as client:
+        async with client.stream(
+            "POST",
+            "https://yarngpt.ai/api/v1/tts",
+            headers={"Authorization": f"Bearer {YARNGPT_API_KEY}"},
+            json={"text": text, "voice": voice},
+        ) as resp:
+            resp.raise_for_status()
+            async for chunk in resp.aiter_bytes(chunk_size=8192):
+                yield chunk
 
 
 # =============================================================================
-# Supabase retry helper
+# Supabase async retry helper
 # =============================================================================
 
-def _supabase_retry(fn, retries=3, delay=1.0):
-    """Retry a Supabase call up to `retries` times on network/SSL errors."""
+async def _supabase_retry(fn, retries=3, delay=1.0):
+    """Run a blocking Supabase call in a thread pool, with async retry."""
     last_exc = None
     for attempt in range(retries):
         try:
-            return fn()
+            return await asyncio.to_thread(fn)
         except Exception as e:
             last_exc = e
             if attempt < retries - 1:
                 print(f"[RETRY] Supabase error (attempt {attempt + 1}/{retries}): {e}")
-                time.sleep(delay)
+                await asyncio.sleep(delay)   # non-blocking sleep
     raise last_exc
 
 
@@ -259,8 +258,8 @@ async def lifespan(app: FastAPI):
     print(f"\n{'='*60}")
     print("Fluentroot Language Learning Backend Starting")
     print(f"Supabase URL : {SUPABASE_URL}")
-    print("Chat         : OpenAI (primary) -> Gemini (fallback)")
-    print("TTS          : YarnGPT")
+    print("Chat         : OpenAI + Gemini (raced in parallel)")
+    print("TTS          : YarnGPT (async streaming)")
     print(f"{'='*60}\n")
     yield
     print("Server shutting down.")
@@ -295,7 +294,9 @@ class TTSRequest(BaseModel):
 @app.post("/signup")
 async def signup(auth: UserAuth):
     try:
-        resp = supabase.auth.sign_up({"email": auth.email, "password": auth.password})
+        resp = await asyncio.to_thread(
+            lambda: supabase.auth.sign_up({"email": auth.email, "password": auth.password})
+        )
         return {"message": "User registered successfully", "user": resp.user}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -303,7 +304,9 @@ async def signup(auth: UserAuth):
 @app.post("/login")
 async def login(auth: UserAuth):
     try:
-        resp = supabase.auth.sign_in_with_password({"email": auth.email, "password": auth.password})
+        resp = await asyncio.to_thread(
+            lambda: supabase.auth.sign_in_with_password({"email": auth.email, "password": auth.password})
+        )
         return {"message": "Login successful", "session": resp.session, "user": resp.user}
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
@@ -313,7 +316,9 @@ async def login(auth: UserAuth):
 @app.get("/conversations/single/{conversation_id}")
 async def get_single_conversation(conversation_id: str):
     try:
-        resp = supabase.table("conversations").select("*").eq("id", conversation_id).execute()
+        resp = await asyncio.to_thread(
+            lambda: supabase.table("conversations").select("*").eq("id", conversation_id).execute()
+        )
         if not resp.data:
             raise HTTPException(status_code=404, detail="Conversation not found")
         return resp.data[0]
@@ -325,7 +330,9 @@ async def get_single_conversation(conversation_id: str):
 @app.get("/conversations/{user_id}")
 async def get_conversations(user_id: str):
     try:
-        resp = supabase.table("conversations").select("*").eq("user_id", user_id).order("updated_at", desc=True).execute()
+        resp = await asyncio.to_thread(
+            lambda: supabase.table("conversations").select("*").eq("user_id", user_id).order("updated_at", desc=True).execute()
+        )
         return resp.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -333,7 +340,9 @@ async def get_conversations(user_id: str):
 @app.post("/conversations")
 async def create_conversation(conv: dict):
     try:
-        resp = supabase.table("conversations").insert(conv).execute()
+        resp = await asyncio.to_thread(
+            lambda: supabase.table("conversations").insert(conv).execute()
+        )
         return {"message": "Conversation created", "data": resp.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -341,8 +350,11 @@ async def create_conversation(conv: dict):
 @app.delete("/conversations/{conversation_id}")
 async def delete_conversation(conversation_id: str):
     try:
-        supabase.table("messages").delete().eq("conversation_id", conversation_id).execute()
-        supabase.table("conversations").delete().eq("id", conversation_id).execute()
+        # Run both deletes in parallel
+        await asyncio.gather(
+            asyncio.to_thread(lambda: supabase.table("messages").delete().eq("conversation_id", conversation_id).execute()),
+            asyncio.to_thread(lambda: supabase.table("conversations").delete().eq("id", conversation_id).execute()),
+        )
         return {"message": "Conversation deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -350,7 +362,9 @@ async def delete_conversation(conversation_id: str):
 @app.get("/messages/{conversation_id}")
 async def get_messages(conversation_id: str):
     try:
-        resp = supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("timestamp", desc=False).execute()
+        resp = await asyncio.to_thread(
+            lambda: supabase.table("messages").select("*").eq("conversation_id", conversation_id).order("timestamp", desc=False).execute()
+        )
         return resp.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -361,7 +375,9 @@ async def get_messages(conversation_id: str):
 async def translate_text(req: TranslationRequest):
     if _have_translator:
         try:
-            translated = GoogleTranslator(source="auto", target=req.target_lang).translate(req.text)
+            translated = await asyncio.to_thread(
+                lambda: GoogleTranslator(source="auto", target=req.target_lang).translate(req.text)
+            )
             return {"translatedText": translated}
         except Exception as e:
             print(f"Translation error: {e}")
@@ -390,18 +406,11 @@ async def text_to_speech(req: TTSRequest):
     print(f"[TTS] voice={voice} | lang={req.language} | chars={len(req.text)}")
 
     try:
-        resp = _yarngpt_tts(req.text, voice)
-        if resp.status_code == 200:
-            return StreamingResponse(
-                resp.iter_content(chunk_size=8192),
-                media_type="audio/mpeg",
-                headers={"X-Voice-Used": voice},
-            )
-        error_detail = resp.text
-        print(f"[ERROR] YarnGPT TTS {resp.status_code}: {error_detail}")
-        raise HTTPException(status_code=resp.status_code, detail=error_detail)
-    except HTTPException:
-        raise
+        return StreamingResponse(
+            _yarngpt_tts_stream(req.text, voice),
+            media_type="audio/mpeg",
+            headers={"X-Voice-Used": voice},
+        )
     except Exception as e:
         print(f"[ERROR] YarnGPT TTS: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -417,14 +426,11 @@ async def text_to_speech_get(text: str, voice: Optional[str] = "Idera"):
         raise HTTPException(status_code=500, detail="YARNGPT_API_KEY not configured")
 
     try:
-        resp = _yarngpt_tts(text, voice)
-        if resp.status_code == 200:
-            return StreamingResponse(
-                resp.iter_content(chunk_size=8192),
-                media_type="audio/mpeg",
-                headers={"X-Voice-Used": voice}
-            )
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        return StreamingResponse(
+            _yarngpt_tts_stream(text, voice),
+            media_type="audio/mpeg",
+            headers={"X-Voice-Used": voice},
+        )
     except Exception as e:
         print(f"[ERROR] YarnGPT GET TTS: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -461,7 +467,7 @@ async def get_tts_voices():
 async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
     await websocket.accept()
     try:
-        conv_res = _supabase_retry(
+        conv_res = await _supabase_retry(
             lambda: supabase.table("conversations").select("language").eq("id", conversation_id).execute()
         )
         target_lang = conv_res.data[0]["language"] if conv_res.data else "en"
@@ -472,53 +478,53 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
             message_data = json.loads(data)
             user_timestamp = datetime.now().isoformat()
 
-            # Save user message
-            user_res = _supabase_retry(
-                lambda: supabase.table("messages").insert({
+            # ── Save user message + update conversation metadata in parallel ──
+            user_res, _ = await asyncio.gather(
+                _supabase_retry(
+                    lambda: supabase.table("messages").insert({
+                        "conversation_id": conversation_id,
+                        "sender": "user",
+                        "text": message_data["text"],
+                        "timestamp": user_timestamp,
+                    }).execute()
+                ),
+                _supabase_retry(
+                    lambda: supabase.table("conversations").update({
+                        "last_message": message_data["text"],
+                        "updated_at": user_timestamp,
+                    }).eq("id", conversation_id).execute()
+                ),
+            )
+            user_msg_id = user_res.data[0]["id"] if user_res.data else f"u-{datetime.now().timestamp()}"
+
+            # ── Echo user message + fetch history in parallel ──────────────────
+            history_res, _ = await asyncio.gather(
+                _supabase_retry(
+                    lambda: supabase.table("messages")
+                    .select("sender", "text")
+                    .eq("conversation_id", conversation_id)
+                    .order("timestamp", desc=False)
+                    .limit(10)
+                    .execute()
+                ),
+                websocket.send_text(json.dumps({
+                    "id": user_msg_id,
                     "conversation_id": conversation_id,
                     "sender": "user",
                     "text": message_data["text"],
                     "timestamp": user_timestamp,
-                }).execute()
-            )
-            user_msg_id = user_res.data[0]["id"] if user_res.data else f"u-{datetime.now().timestamp()}"
-
-            # Update conversation metadata
-            _supabase_retry(
-                lambda: supabase.table("conversations").update({
-                    "last_message": message_data["text"],
-                    "updated_at": user_timestamp,
-                }).eq("id", conversation_id).execute()
-            )
-
-            # Echo user message back immediately
-            await websocket.send_text(json.dumps({
-                "id": user_msg_id,
-                "conversation_id": conversation_id,
-                "sender": "user",
-                "text": message_data["text"],
-                "timestamp": user_timestamp,
-            }))
-
-            # Fetch recent history for AI context
-            history_res = _supabase_retry(
-                lambda: supabase.table("messages")
-                .select("sender", "text")
-                .eq("conversation_id", conversation_id)
-                .order("timestamp", desc=False)
-                .limit(10)
-                .execute()
+                })),
             )
             history = history_res.data
 
-            # Generate AI response (OpenAI -> Gemini)
-            ai_text = generate_ai_response(history, target_lang)
+            # ── Generate AI response (OpenAI and Gemini raced) ─────────────────
+            ai_text = await generate_ai_response(history, target_lang)
             ai_timestamp = datetime.now().isoformat()
             voice_to_use = LANG_DEFAULT_VOICE.get(target_lang, "Idera")
 
-            # Save AI message - handle missing tts_voice column gracefully
+            # ── Save AI message ────────────────────────────────────────────────
             try:
-                ai_res = _supabase_retry(
+                ai_res = await _supabase_retry(
                     lambda: supabase.table("messages").insert({
                         "conversation_id": conversation_id,
                         "sender": "ai",
@@ -528,10 +534,9 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
                     }).execute()
                 )
             except Exception as e:
-                # Fallback: try inserting without tts_voice if column is missing
                 if "tts_voice" in str(e):
                     print(f"[WARN] 'tts_voice' column missing in DB, falling back. Error: {e}")
-                    ai_res = _supabase_retry(
+                    ai_res = await _supabase_retry(
                         lambda: supabase.table("messages").insert({
                             "conversation_id": conversation_id,
                             "sender": "ai",
@@ -543,7 +548,7 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
                     raise e
             ai_msg_id = ai_res.data[0]["id"] if ai_res.data else f"a-{datetime.now().timestamp()}"
 
-            # Send AI response — include suggested TTS voice so frontend can call /tts
+            # ── Send AI response ───────────────────────────────────────────────
             await websocket.send_text(json.dumps({
                 "id": ai_msg_id,
                 "conversation_id": conversation_id,

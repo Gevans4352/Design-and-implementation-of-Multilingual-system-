@@ -1,6 +1,6 @@
 
 import { Link } from "react-router-dom"
-import image from "../assets/photo-1706403615881-d83dc2067c5d.jpg"
+import image from "../assets/replace.jpg"
 import Features from "./Features"
 import CTA from "./CTA"
 import Footer from "./Footer"
@@ -29,7 +29,7 @@ const Home = () => {
                         <img
                             src={image}
                             alt=""
-                            className="relative rounded-2xl h-80 md:h-96 w-full object-cover shadow-2xl border-4 border-purple-500/50"
+                            className="relative rounded-2xl h-96 md:h-[450px] lg:h-[600px] w-full object-cover shadow-2xl border-4 border-purple-500/50"
                         />
                     </div>
                 </div>
