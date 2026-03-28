@@ -21,7 +21,7 @@ const Home = () => {
                 </div>
 
                 <div className="w-full md:w-1/2 flex justify-center md:justify-end mb-10 md:mb-0">
-                    <div className="relative group w-full max-w-md md:max-w-none">
+                    <div className="relative group w-[90%] max-w-md md:w-[90%] md:max-w-none">
                         {/* The Glow Effect */}
                         <div className="absolute -inset-1 bg-[#9810fa] rounded-3xl blur-2xl opacity-30 group-hover:opacity-50 transition-opacity duration-500"></div>
 
