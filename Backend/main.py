@@ -118,7 +118,7 @@ async def _call_openai(messages: list) -> Optional[str]:
 
 
 async def _call_gemini(messages: list) -> Optional[str]:
-    """Async call to Google Gemini 2.5 Flash. Returns text or None on failure."""
+    """Async call to Google Gemini 3 Flash Preview. Returns text or None on failure."""
     if not GOOGLE_GEMINI_API_KEY:
         return None
     try:
@@ -137,7 +137,7 @@ async def _call_gemini(messages: list) -> Optional[str]:
 
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            "gemini-2.5-flash:generateContent?key=" + GOOGLE_GEMINI_API_KEY
+            "gemini-3-flash-preview:generateContent?key=" + GOOGLE_GEMINI_API_KEY
         )
         async with httpx.AsyncClient(timeout=25) as client:
             resp = await client.post(
