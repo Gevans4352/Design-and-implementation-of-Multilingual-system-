@@ -1,4 +1,4 @@
-# FluentRoot
+# Fluent
 
 FluentRoot is a multilingual AI-powered chatbot that enables users to communicate and learn across five languages: English, French, Yoruba, Igbo, and Hausa. Built as a final-year capstone project, it focuses on bridging the gap in natural language processing support for Nigerian indigenous languages.
 
