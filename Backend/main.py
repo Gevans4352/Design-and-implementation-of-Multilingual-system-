@@ -297,7 +297,11 @@ async def signup(auth: UserAuth):
         resp = await asyncio.to_thread(
             lambda: supabase.auth.sign_up({"email": auth.email, "password": auth.password})
         )
-        return {"message": "User registered successfully", "user": resp.user}
+        return {
+            "message": "User registered successfully",
+            "user": resp.user,
+            "session": getattr(resp, "session", None),
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -465,12 +469,26 @@ async def get_tts_voices():
 # ── WebSocket chat ────────────────────────────────────────────────────────────
 @app.websocket("/ws/chat/{conversation_id}")
 async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
-    await websocket.accept()
     try:
-        conv_res = await _supabase_retry(
-            lambda: supabase.table("conversations").select("language").eq("id", conversation_id).execute()
-        )
-        target_lang = conv_res.data[0]["language"] if conv_res.data else "en"
+        await websocket.accept()
+    except Exception as e:
+        print(f"[WS ERROR] Failed to accept WebSocket connection {conversation_id}: {e}")
+        return
+    
+    try:
+        # Try to get the conversation language; default to 'en' if not found
+        target_lang = "en"
+        try:
+            conv_res = await _supabase_retry(
+                lambda: supabase.table("conversations").select("language").eq("id", conversation_id).execute(),
+                retries=2,
+                delay=0.5
+            )
+            if conv_res.data:
+                target_lang = conv_res.data[0]["language"]
+        except Exception as e:
+            print(f"[WS WARN] Could not fetch conversation {conversation_id}: {e}. Defaulting to 'en'.")
+        
         print(f"[WS] Conversation {conversation_id} | language: {target_lang}")
 
         while True:
@@ -568,4 +586,4 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8005))
-    uvicorn.run(app, host="127.0.0.1", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port)
