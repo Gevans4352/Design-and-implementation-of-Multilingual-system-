@@ -7,13 +7,22 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
     useEffect(() => {
         const checkAuth = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            setIsAuthenticated(!!session);
+            // Check local storage first (resilience)
+            const localLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+            
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                setIsAuthenticated(!!session || localLoggedIn);
+            } catch (err) {
+                console.error("Auth check failed, using local fallback:", err);
+                setIsAuthenticated(localLoggedIn);
+            }
         };
         checkAuth();
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            setIsAuthenticated(!!session);
+            const localLoggedIn = localStorage.getItem("isLoggedIn") === "true";
+            setIsAuthenticated(!!session || localLoggedIn);
         });
 
         return () => subscription.unsubscribe();

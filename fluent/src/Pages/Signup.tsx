@@ -25,28 +25,33 @@ const Signup = () => {
             return
         }
 
-        try {
-            const { data, error } = await supabase.auth.signUp({
-                email,
-                password,
-                options: {
-                    data: {
-                        full_name: fullName,
-                    }
-                }
-            })
+        const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8006"
 
-            if (error) {
-                setError(error.message)
-            } else if (data.user) {
-                console.log("Signup successful:", data.user)
-                localStorage.removeItem("pendingLogout") // clear any stale logout flag
+        try {
+            const response = await fetch(`${API_BASE}/signup`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            })
+            const result = await response.json()
+
+            if (!response.ok) {
+                setError(result.detail || result.message || "Signup failed")
+            } else if (result.user) {
+                console.log("Signup successful:", result.user)
+
+                // Sync session to Supabase client
+                if (result.session) {
+                    await supabase.auth.setSession(result.session)
+                }
+
+                localStorage.removeItem("pendingLogout")
                 localStorage.setItem("isLoggedIn", "true")
                 sessionStorage.setItem("tabSessionActive", "true")
                 localStorage.setItem("user", JSON.stringify({
-                    email: data.user.email,
-                    id: data.user.id,
-                    full_name: fullName
+                    email: result.user.email,
+                    id: result.user.id,
+                    full_name: fullName,
                 }))
                 navigate("/dashboard")
             }

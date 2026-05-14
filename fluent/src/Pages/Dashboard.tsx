@@ -23,17 +23,32 @@ const Dashboard = () => {
     }, []);
 
     const fetchConversations = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
+        let userId: string | null = null;
+        
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            userId = session?.user?.id || null;
+        } catch (e) {
+            console.error("SDK session fetch failed:", e);
+        }
+
+        // Fallback to localStorage if SDK fails
+        if (!userId) {
+            const storedUser = localStorage.getItem("user");
+            if (storedUser) {
+                userId = JSON.parse(storedUser).id;
+            }
+        }
+
+        if (!userId) {
             navigate("/Login");
             return;
         }
-        const user = session.user;
 
         try {
             // Updated to fetch conversations for the Supabase UUID
             const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8006";
-            const response = await fetch(`${API_BASE}/conversations/${user.id}`);
+            const response = await fetch(`${API_BASE}/conversations/${userId}`);
             if (response.ok) {
                 const data = await response.json();
                 setConversations(data);

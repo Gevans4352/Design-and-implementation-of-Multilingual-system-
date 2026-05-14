@@ -70,7 +70,7 @@ const TopicSelection = () => {
         const topic = topics.find(t => t.id === topicId);
         const language = localStorage.getItem("selectedLanguage") || "ig";
 
-        // Try getSession first, fall back to getUser if session is stale
+        // Try getSession first, fall back to getUser or localStorage
         let userId: string | null = null;
         try {
             const { data: { session } } = await supabase.auth.getSession();
@@ -83,6 +83,14 @@ const TopicSelection = () => {
             }
         } catch (e) {
             console.error("Auth check failed:", e);
+        }
+
+        // Fallback to localStorage if SDK fails
+        if (!userId) {
+            const storedUser = localStorage.getItem("user");
+            if (storedUser) {
+                userId = JSON.parse(storedUser).id;
+            }
         }
 
         if (!userId) {

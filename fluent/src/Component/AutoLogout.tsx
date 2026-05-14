@@ -12,7 +12,11 @@ const AutoLogout = () => {
         const hasTabSession = sessionStorage.getItem('tabSessionActive') === 'true';
 
         const performLogout = async () => {
-            await supabase.auth.signOut();
+            try {
+                await supabase.auth.signOut();
+            } catch (err) {
+                console.error("Supabase signOut failed, proceeding with local logout:", err);
+            }
             localStorage.removeItem('isLoggedIn');
             localStorage.removeItem('user');
             localStorage.removeItem('hasSeenWelcome');

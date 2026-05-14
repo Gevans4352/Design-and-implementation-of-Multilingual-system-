@@ -16,22 +16,32 @@ const Login = () => {
         setLoading(true)
         setError("")
 
-        try {
-            const { data, error } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-            })
+        const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8006"
 
-            if (error) {
-                setError(error.message)
-            } else if (data.user) {
-                console.log("Login successful:", data.user)
-                localStorage.removeItem("pendingLogout") // clear any stale logout flag
+        try {
+            const response = await fetch(`${API_BASE}/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            })
+            const result = await response.json()
+
+            if (!response.ok) {
+                setError(result.detail || result.message || "Login failed")
+            } else if (result.user) {
+                console.log("Login successful:", result.user)
+
+                // Sync session to Supabase client
+                if (result.session) {
+                    await supabase.auth.setSession(result.session)
+                }
+
+                localStorage.removeItem("pendingLogout")
                 localStorage.setItem("isLoggedIn", "true")
                 sessionStorage.setItem("tabSessionActive", "true")
                 localStorage.setItem("user", JSON.stringify({
-                    email: data.user.email,
-                    id: data.user.id
+                    email: result.user.email,
+                    id: result.user.id,
                 }))
                 navigate("/dashboard")
             }
