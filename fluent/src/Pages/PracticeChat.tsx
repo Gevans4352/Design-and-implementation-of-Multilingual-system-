@@ -72,7 +72,7 @@ const PracticeChat = () => {
         isTranslatingRef.current = isTranslating;
     }, [isTranslating]);
 
-    const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8006";
+    const API_BASE = import.meta.env.VITE_API_URL || "";
 
     // Check if Speech Recognition is supported
     useEffect(() => {
@@ -142,7 +142,15 @@ const PracticeChat = () => {
     // WebSocket Setup
     useEffect(() => {
         const conversationId = localStorage.getItem("currentConversationId") || "demo-session";
-        const socket = new WebSocket(`${API_BASE.replace('http', 'ws')}/ws/chat/${conversationId}`);
+        const getWsUrl = () => {
+            if (API_BASE) {
+                return `${API_BASE.replace('http', 'ws')}/ws/chat/${conversationId}`;
+            }
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            return `${protocol}//${window.location.host}/ws/chat/${conversationId}`;
+        };
+
+        const socket = new WebSocket(getWsUrl());
 
         socket.onopen = () => console.log("WebSocket connected");
 

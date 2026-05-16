@@ -17,7 +17,8 @@ const Login = () => {
         setError("")
 
         // Use environment variable if provided; otherwise use relative URL so Vite proxy can apply
-        const API_BASE = import.meta.env.VITE_API_URL || ""
+        // Use environment variable if provided; otherwise default to an empty string (relative path)
+        const API_BASE = import.meta.env.VITE_API_URL || "";
 
         try {
             const response = await fetch(`${API_BASE}/login`, {
