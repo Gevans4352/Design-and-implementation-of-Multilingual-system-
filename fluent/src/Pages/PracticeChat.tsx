@@ -72,7 +72,7 @@ const PracticeChat = () => {
         isTranslatingRef.current = isTranslating;
     }, [isTranslating]);
 
-    const API_BASE = import.meta.env.VITE_API_URL || "";
+    const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
     // Check if Speech Recognition is supported
     useEffect(() => {
@@ -143,64 +143,81 @@ const PracticeChat = () => {
     useEffect(() => {
         const conversationId = localStorage.getItem("currentConversationId") || "demo-session";
         const getWsUrl = () => {
-            if (API_BASE) {
+            if (API_BASE && API_BASE.startsWith('http')) {
                 return `${API_BASE.replace('http', 'ws')}/ws/chat/${conversationId}`;
             }
+            // Fallback for relative paths (like "/api") or when API_BASE is empty
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            return `${protocol}//${window.location.host}/ws/chat/${conversationId}`;
+            const base = API_BASE || "";
+            return `${protocol}//${window.location.host}${base}/ws/chat/${conversationId}`;
         };
 
         const socket = new WebSocket(getWsUrl());
 
-        socket.onopen = () => console.log("WebSocket connected");
+        socket.onopen = () => {
+            console.log("WebSocket connected");
+            setMicError(null); // Clear any previous connection errors
+        };
 
         socket.onmessage = async (event) => {
-            const data = JSON.parse(event.data);
+            try {
+                const data = JSON.parse(event.data);
 
-            if (data.sender === "ai") {
-                setIsThinking(false);
-            }
-
-            let translation = "";
-            if (data.sender === "ai" && isTranslatingRef.current) {
-                try {
-                    const transRes = await fetch(`${API_BASE}/translate`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ text: data.text, target_lang: "en" })
-                    });
-                    if (transRes.ok) {
-                        const transData = await transRes.json();
-                        translation = transData.translatedText;
-                    }
-                } catch (err) {
-                    console.error("Translation failed:", err);
+                if (data.sender === "ai") {
+                    setIsThinking(false);
                 }
-            }
 
-            setMessages((prev: Message[]) => {
-                const isDuplicate = prev.some((m: Message) => m.id === data.id.toString());
-                if (isDuplicate) return prev;
-                return [...prev, {
-                    id: data.id.toString(),
-                    text: data.text,
-                    sender: data.sender,
-                    timestamp: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                    translation,
-                    tts_voice: data.tts_voice
-                }];
-            });
+                let translation = "";
+                if (data.sender === "ai" && isTranslatingRef.current) {
+                    try {
+                        const transRes = await fetch(`${API_BASE}/translate`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ text: data.text, target_lang: "en" })
+                        });
+                        if (transRes.ok) {
+                            const transData = await transRes.json();
+                            translation = transData.translatedText;
+                        }
+                    } catch (err) {
+                        console.error("Translation failed:", err);
+                    }
+                }
+
+                setMessages((prev: Message[]) => {
+                    const isDuplicate = prev.some((m: Message) => m.id === data.id.toString());
+                    if (isDuplicate) return prev;
+                    return [...prev, {
+                        id: data.id.toString(),
+                        text: data.text,
+                        sender: data.sender,
+                        timestamp: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        translation,
+                        tts_voice: data.tts_voice
+                    }];
+                });
+            } catch (err) {
+                console.error("Failed to process WebSocket message:", err);
+            }
         };
 
         socket.onerror = (err) => {
-            console.error("WebSocket error:", err);
+            console.error("WebSocket error details:", err);
+            setMicError("Chat connection lost. Please refresh the page.");
             setIsThinking(false);
         };
 
-        socket.onclose = () => console.log("WebSocket disconnected");
+        socket.onclose = (event) => {
+            console.log("WebSocket disconnected:", event.code, event.reason);
+            setIsThinking(false);
+        };
 
         socketRef.current = socket;
-        return () => socket.close();
+        return () => {
+            if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+                socket.close();
+            }
+        };
     }, [API_BASE]);
 
     const scrollToBottom = () => {

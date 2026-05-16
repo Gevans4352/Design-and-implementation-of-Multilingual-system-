@@ -47,7 +47,7 @@ const Dashboard = () => {
 
         try {
             // Updated to fetch conversations for the Supabase UUID
-            const API_BASE = import.meta.env.VITE_API_URL || "";
+            const API_BASE = import.meta.env.VITE_API_URL || "/api";
             const response = await fetch(`${API_BASE}/conversations/${userId}`);
             if (response.ok) {
                 const data = await response.json();
@@ -78,7 +78,7 @@ const Dashboard = () => {
         setConfirmId(null);
 
         try {
-            const API_BASE = import.meta.env.VITE_API_URL || "";
+            const API_BASE = import.meta.env.VITE_API_URL || "/api";
             const response = await fetch(`${API_BASE}/conversations/${conversationId}`, {
                 method: "DELETE",
             });

@@ -60,7 +60,7 @@ const TopicSelection = () => {
         t.desc.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8006";
+    const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
     const handleSelectTopic = async (topicId: string) => {
         if (selecting) return; // Prevent double clicks
